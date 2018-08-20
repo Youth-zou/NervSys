@@ -1,9 +1,9 @@
 <?php
 
 /**
- * Crypt Key Generator Interface
+ * OS handler interface
  *
- * Copyright 2018 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,41 +18,35 @@
  * limitations under the License.
  */
 
-namespace ext\lib;
+namespace core\handler\platform\lib;
 
-interface key
+interface os
 {
     /**
-     * Create Crypt Key
+     * Get PHP system path
+     */
+    public static function sys_path(): string;
+
+    /**
+     * Get system hash
+     */
+    public static function sys_hash(): string;
+
+    /**
+     * Build background command
+     *
+     * @param string $cmd
      *
      * @return string
      */
-    public static function create(): string;
+    public static function cmd_bg(string $cmd): string;
 
     /**
-     * Extract Keys from Crypt Key
+     * Build proc_open command
      *
-     * @param string $key
-     *
-     * @return array
-     */
-    public static function extract(string $key): array;
-
-    /**
-     * Create obscured key from Crypt Key
-     *
-     * @param string $key
+     * @param string $cmd
      *
      * @return string
      */
-    public static function obscure(string $key): string;
-
-    /**
-     * Rebuild Crypt Key from obscured Key
-     *
-     * @param string $key
-     *
-     * @return string
-     */
-    public static function rebuild(string $key): string;
+    public static function cmd_proc(string $cmd): string;
 }

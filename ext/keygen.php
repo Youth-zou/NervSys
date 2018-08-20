@@ -3,8 +3,7 @@
 /**
  * Crypt Key Generator Extension
  *
- * Copyright 2017 Jerry Shaw <jerry-shaw@live.com>
- * Copyright 2018 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +22,9 @@ namespace ext;
 
 use ext\lib\key;
 
-class keygen implements key
+use core\handler\factory;
+
+class keygen extends factory implements key
 {
     /**
      * Create Crypt Key
@@ -44,9 +45,12 @@ class keygen implements key
      */
     public static function extract(string $key): array
     {
-        $keys = [];
+        $keys        = [];
         $keys['key'] = &$key;
-        $keys['iv'] = 0 === ord(substr($key, 0, 1)) & 1 ? substr($key, 0, 16) : substr($key, -16, 16);
+
+        $keys['iv'] = 0 === ord(substr($key, 0, 1)) & 1
+            ? substr($key, 0, 16)
+            : substr($key, -16, 16);
 
         unset($key);
         return $keys;
@@ -65,7 +69,11 @@ class keygen implements key
 
         foreach ($unit as $k => $v) {
             $unit_key = substr($v, 0, 1);
-            if ($k & 1 !== ord($unit_key) & 1) $v = strrev($v);
+
+            if ($k & 1 !== ord($unit_key) & 1) {
+                $v = strrev($v);
+            }
+
             $unit[$k] = $v . $unit_key;
         }
 
@@ -87,9 +95,9 @@ class keygen implements key
         $unit = str_split($key, 5);
 
         foreach ($unit as $k => $v) {
-            $unit_key = substr($v, -1, 1);
+            $unit_key  = substr($v, -1, 1);
             $unit_item = substr($v, 0, 4);
-            $unit[$k] = ($k & 1 !== ord($unit_key) & 1) ? strrev($unit_item) : $unit_item;
+            $unit[$k]  = ($k & 1 !== ord($unit_key) & 1) ? strrev($unit_item) : $unit_item;
         }
 
         $key = implode($unit);

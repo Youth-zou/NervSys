@@ -3,7 +3,7 @@
 /**
  * File I/O Extension
  *
- * Copyright 2017 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@
 
 namespace ext;
 
-class file
+use core\handler\factory;
+
+class file extends factory
 {
     /**
      * Get file extension (in lowercase)
@@ -32,7 +34,11 @@ class file
     public static function get_ext(string $path): string
     {
         $ext = pathinfo($path, PATHINFO_EXTENSION);
-        if ('' !== $ext) $ext = strtolower($ext);
+
+        if ('' !== $ext) {
+            $ext = strtolower($ext);
+        }
+
         unset($path);
         return $ext;
     }
@@ -46,21 +52,21 @@ class file
      *
      * @return string
      */
-    public static function get_path(string $path, string $root = ROOT, int $mode = 0776): string
+    public static function get_path(string $path, string $root = ROOT, int $mode = 0774): string
     {
         //Parent directory is not allowed
-        if (false !== strpos($path, '..')) $path = str_replace('..', '', $path);
-        //Format path with '/'
-        if (false !== strpos($path, '\\')) $path = strtr($path, '\\', '/');
+        if (false !== strpos($path, '..')) {
+            $path = str_replace('..', '', $path);
+        }
 
-        //Trim "/"
-        $path = trim($path, '/');
+        //Get clean path
+        $path = strtr($path, ['/' => DIRECTORY_SEPARATOR, '\\' => DIRECTORY_SEPARATOR]);
+        $path = trim($path, DIRECTORY_SEPARATOR);
 
-        //Return "/" when path is empty
-        if ('' === $path) return is_readable($root) ? '/' : '';
-
-        //Add "/"
-        $path = '/' . $path;
+        //Return root path
+        if ('' === $path) {
+            return is_readable($root) ? DIRECTORY_SEPARATOR : '';
+        }
 
         //Create directories
         $dir = $root . $path;
@@ -72,7 +78,7 @@ class file
         }
 
         //Check path property
-        $path = is_readable($dir) ? $path . '/' : '';
+        $path = is_readable($dir) ? $path . DIRECTORY_SEPARATOR : '';
 
         unset($root, $mode, $dir);
         return $path;
@@ -80,7 +86,6 @@ class file
 
     /**
      * Get a list of files in a directory or recursively
-     * Target extension can be passed by $pattern parameter
      *
      * @param string $path
      * @param string $pattern
@@ -91,21 +96,27 @@ class file
     public static function get_list(string $path, string $pattern = '*', bool $recursive = false): array
     {
         //Check path
-        $path = realpath($path);
-        if (false === $path) return [];
+        if (false === $pathname = realpath($path)) {
+            return [];
+        }
 
-        //Get file list
-        $path .= '/';
-        $list = glob($path . $pattern, GLOB_NOSORT | GLOB_BRACE);
+        $pathname .= DIRECTORY_SEPARATOR;
+        $list     = glob($pathname . $pattern, GLOB_NOSORT | GLOB_BRACE);
 
         //Return list on non-recursive
-        if (!$recursive) return $list;
+        if (!$recursive) {
+            unset($path, $pattern, $recursive, $pathname);
+            return $list;
+        }
 
         //Get file list recursively
-        $dirs = glob($path . '*', GLOB_NOSORT | GLOB_ONLYDIR);
-        foreach ($dirs as $dir) $list = array_merge($list, self::get_list($dir, $pattern, true));
+        $dirs = glob($pathname . '*', GLOB_NOSORT | GLOB_ONLYDIR);
 
-        unset($path, $pattern, $recursive, $dirs, $dir);
+        foreach ($dirs as $dir) {
+            $list = array_merge($list, self::get_list($dir, $pattern, true));
+        }
+
+        unset($path, $pattern, $recursive, $pathname, $dirs, $dir);
         return $list;
     }
 }

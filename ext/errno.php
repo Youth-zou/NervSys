@@ -3,8 +3,7 @@
 /**
  * Errno Extension
  *
- * Copyright 2017 Jerry Shaw <jerry-shaw@live.com>
- * Copyright 2017-2018 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,52 +20,57 @@
 
 namespace ext;
 
-class errno
+use core\handler\factory;
+
+class errno extends factory
 {
-    /**
-     * Error file directory
-     * Related to "ROOT/module/"
-     * Error file should be located in "ROOT/module/$dir/filename.ini"
-     *
-     * @var string
-     */
-    public static $dir = 'error';
-
-    //Multi-language support
-    public static $lang = true;
-
     //Error message pool
     private static $pool = [];
 
+    //Multi-language support
+    private static $lang = true;
+
     /**
-     * Load error file from module
+     * Error file directory
      *
-     * @param string $module
-     * @param string $file
+     * Related to "ROOT/$dir/"
+     * Error file should be put in "ROOT/$dir/self::DIR/filename.ini"
      */
-    public static function load(string $module, string $file): void
+    const DIR = 'error';
+
+    /**
+     * Load error file
+     *
+     * @param string $dir
+     * @param string $name
+     * @param bool   $lang
+     */
+    public static function load(string $dir, string $name, bool $lang = true)
     {
-        $file = '/' . $module . '/' . self::$dir . '/' . $file . '.ini';
+        $file = ROOT . $dir . DIRECTORY_SEPARATOR . self::DIR . DIRECTORY_SEPARATOR . $name . '.ini';
 
-        $path = realpath(ROOT . $file);
-        if (false === $path) {
-            debug(__CLASS__, '[' . $file . '] NOT found!');
-            return;
+        if (is_array($data = parse_ini_file($file, false))) {
+            self::$lang = &$lang;
+            self::$pool = &$data;
         }
 
-        $error = parse_ini_file($path, false);
-        if (false === $error) {
-            debug(__CLASS__, '[' . $file . '] Incorrect!');
-            return;
-        }
-
-        self::$pool += $error;
-        unset($module, $file, $path, $error);
+        unset($dir, $name, $lang, $file, $data);
     }
 
     /**
-     * Get a standard error result
-     * Language pack needs to be loaded before getting an error message on multi-language support system
+     * Set standard output error
+     *
+     * @param int $code
+     * @param int $errno
+     */
+    public static function set(int $code, int $errno = 0): void
+    {
+        parent::$error = self::get($code, $errno);
+        unset($code, $errno);
+    }
+
+    /**
+     * Get standard error data
      *
      * @param int $code
      * @param int $errno
@@ -75,8 +79,12 @@ class errno
      */
     public static function get(int $code, int $errno = 0): array
     {
-        return isset(self::$pool[$code])
-            ? ['err' => &$errno, 'code' => &$code, 'msg' => self::$lang ? gettext(self::$pool[$code]) : self::$pool[$code]]
-            : ['err' => &$errno, 'code' => &$code, 'msg' => 'Error message NOT found!'];
+        return [
+            'error' => &$errno,
+            'code'  => &$code,
+            'msg'   => isset(self::$pool[$code])
+                ? (self::$lang ? gettext(self::$pool[$code]) : self::$pool[$code])
+                : 'Error message NOT found!'
+        ];
     }
 }

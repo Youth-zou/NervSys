@@ -3,7 +3,7 @@
 /**
  * Multi-Process Controller Extension
  *
- * Copyright 2017-2018 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,131 +20,218 @@
 
 namespace ext;
 
-use core\ctr\os;
-use core\ctr\router\cli;
+use core\parser\data;
 
-class mpc
+use core\handler\factory;
+use core\handler\platform;
+
+class mpc extends factory
 {
-    //Wait for process result
-    public static $wait = true;
-
-    //Wait timeout (in microseconds)
-    public static $wait_time = 10000;
-
-    //Read time (in microseconds)
-    public static $read_time = 0;
-
-    //Max running processes
-    public static $max_runs = 10;
-
-    //PHP cmd key name in "conf.ini"
-    public static $php_key = 'php';
-
-    //PHP executable path in "conf.ini"
-    public static $php_exe = '';
-
-    //Basic command
-    private static $cmd = '';
+    //Job key
+    private $key = 0;
 
     //Process jobs
-    private static $jobs = [];
+    private $jobs = [];
+
+    //Process quantity
+    private $runs = 10;
+
+    //Process wait option
+    private $wait = true;
+
+    //PHP key name in "system.ini"
+    private $php_key = 'php';
+
+    //PHP executable path in "system.ini"
+    private $php_exe = '';
+
+    //Basic command
+    private $php_cmd = '';
 
     /**
-     * Begin process
+     * mpc constructor.
+     *
+     * @param int  $runs
+     * @param bool $wait
+     *
+     * @throws \Exception
      */
-    public static function begin(): void
+    public function __construct(int $runs = 10, bool $wait = true)
     {
-        //Reset jobs
-        self::$jobs = [];
+        if (0 < $runs) {
+            $this->runs = &$runs;
+        }
+
+        $this->wait = &$wait;
+        unset($runs, $wait);
+
+        //Check php cli settings
+        if (!isset(parent::$cli[$this->php_key])) {
+            throw new \Exception('[' . $this->php_key . '] NOT configured in "system.ini"', E_USER_ERROR);
+        }
+
+        $this->php_exe = parent::$cli[$this->php_key];
     }
 
     /**
-     * Add to process list
+     * Add job
      *
      * @param string $cmd
-     * @param array  $argv
-     * @param string $key
+     *
+     * @return object
      */
-    public static function add(string $cmd, array $argv, string $key = ''): void
+    public function add(string $cmd): object
     {
-        '' === $key ? self::$jobs[] = ['cmd' => &$cmd, 'arg' => &$argv] : self::$jobs[$key] = ['cmd' => &$cmd, 'arg' => &$argv];
+        if (!empty($this->jobs)) {
+            ++$this->key;
+        }
 
-        unset($cmd, $argv);
+        $this->jobs[$this->key]['cmd'] = &$cmd;
+
+        unset($cmd);
+        return $this;
     }
 
     /**
-     * Commit to process
+     * Add data
+     *
+     * @param array $data
+     *
+     * @return object
      */
-    public static function commit(): array
+    public function data(array $data): object
     {
-        //Empty job
-        if (empty(self::$jobs)) return [];
+        $this->jobs[$this->key]['data'] = &$data;
 
-        //Check php cmd
-        if ('' === self::$php_exe) self::$php_exe = cli::get_cmd(self::$php_key);
+        unset($data);
+        return $this;
+    }
+
+    /**
+     * Add pipe
+     *
+     * @param array $pipe
+     *
+     * @return object
+     */
+    public function pipe(array $pipe): object
+    {
+        $this->jobs[$this->key]['pipe'] = &$pipe;
+
+        unset($pipe);
+        return $this;
+    }
+
+    /**
+     * Add argv
+     *
+     * @param array $argv
+     *
+     * @return object
+     */
+    public function argv(array $argv): object
+    {
+        $this->jobs[$this->key]['argv'] = &$argv;
+
+        unset($argv);
+        return $this;
+    }
+
+    /**
+     * Commit jobs
+     *
+     * @return array
+     * @throws \Exception
+     */
+    public function commit(): array
+    {
+        if (empty($this->jobs)) {
+            return [];
+        }
 
         //Split jobs
-        $job_pack = count(self::$jobs) < self::$max_runs ? [self::$jobs] : array_chunk(self::$jobs, self::$max_runs, true);
+        $job_packs = count($this->jobs) > $this->runs ? array_chunk($this->jobs, $this->runs, true) : [$this->jobs];
 
-        //Build command
-        self::$cmd = self::$php_exe . ' "' . ROOT . '/api.php"';
-        if (self::$wait) self::$cmd .= ' --ret';
-        if (0 < self::$read_time) self::$cmd .= ' --time ' . self::$read_time;
+        //Build basic command
+        $this->php_cmd = $this->php_exe . ' "' . ROOT . 'api.php"';
+
+        if ($this->wait) {
+            $this->php_cmd .= ' --ret';
+        }
 
         $result = [];
 
-        foreach ($job_pack as $jobs) {
-            //Copy jobs
-            self::$jobs = $jobs;
-            //Execute process
-            $data = self::execute();
-            //Merge result
-            if (!empty($data)) $result += $data;
+        foreach ($job_packs as $jobs) {
+            //Execute jobs and merge result
+            if (!empty($data = $this->execute($jobs))) {
+                $result += $data;
+            }
         }
 
-        unset($job_pack, $jobs, $data);
+        unset($job_packs, $jobs, $data);
         return $result;
     }
 
     /**
-     * Execute processes
+     * Execute jobs
+     *
+     * @param array $jobs
+     *
+     * @return array
+     * @throws \Exception
      */
-    private static function execute(): array
+    private function execute(array $jobs): array
     {
         //Resource list
         $resource = [];
 
         //Start process
-        foreach (self::$jobs as $key => $item) {
-            $cmd = self::$cmd . ' --cmd "' . $item['cmd'] . '"';
-            if (!empty($item['arg'])) $cmd .= ' --data "' . addcslashes(json_encode($item['arg']), '"') . '"';
+        foreach ($jobs as $key => $job) {
+            //Add cmd
+            $cmd = $this->php_cmd . ' --cmd "' . data::encode($job['cmd']) . '"';
+
+            //Append data
+            if (!empty($job['data'])) {
+                $cmd .= ' --data "' . data::encode(json_encode($job['data'])) . '"';
+            }
+
+            //Append pipe
+            if (!empty($job['pipe'])) {
+                $cmd .= ' --pipe "' . data::encode(json_encode($job['pipe'])) . '"';
+            }
+
+            //Append argv
+            if (!empty($job['argv'])) {
+                $cmd .= ' ' . implode(' ', $job['argv']);
+            }
 
             //Create process
-            $process = proc_open(os::cmd_proc($cmd), [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes, cli::work_path);
+            $process = proc_open(platform::cmd_proc($cmd), [['pipe', 'r'], ['pipe', 'w'], ['pipe', 'w']], $pipes);
 
-            //Store resource
             if (is_resource($process)) {
-                $resource[$key]['exec'] = true;
+                $resource[$key]['res']  = true;
+                $resource[$key]['cmd']  = $job['cmd'];
                 $resource[$key]['pipe'] = $pipes;
                 $resource[$key]['proc'] = $process;
             } else {
-                debug(__CLASS__, 'Access denied or [' . $item['cmd'] . '] ERROR!');
-                $resource[$key]['exec'] = false;
+                $resource[$key]['res'] = false;
             }
         }
 
-        unset($key, $item, $cmd, $pipes);
+        unset($jobs, $key, $job, $cmd, $pipes);
 
-        //Check wait options
-        if (!self::$wait) return [];
-        if (0 < self::$wait_time) usleep(self::$wait_time);
+        //Check wait option
+        if (!$this->wait) {
+            return [];
+        }
 
         //Collect result
-        $result = self::collect($resource);
+        $result = $this->collect($resource);
 
         unset($resource, $process);
         return $result;
     }
+
 
     /**
      * Collect result
@@ -153,33 +240,37 @@ class mpc
      *
      * @return array
      */
-    private static function collect(array $resource): array
+    private function collect(array $resource): array
     {
         $result = [];
 
-        //Collect data
         while (!empty($resource)) {
             foreach ($resource as $key => $item) {
-                //Build result
-                if (!isset($result[$key])) {
-                    $result[$key]['exec'] = $item['exec'];
-                    $result[$key]['data'] = '';
-                }
+                //Collect process
+                $result[$key]['res'] = $item['res'];
+                $result[$key]['cmd'] = $item['cmd'];
 
-                //Unset failed process
-                if (!$item['exec']) {
-                    //Unset resource
+                //Remove failed process
+                if (!$item['res']) {
                     unset($resource[$key]);
                     continue;
                 }
 
-                //Unset finished process
+                //Build process result
+                if (!isset($result[$key]['data'])) {
+                    $result[$key]['data'] = '';
+                }
+
+                //Remove finished process
                 if (feof($item['pipe'][1])) {
-                    //Close pipes & process
-                    foreach ($item['pipe'] as $pipe) fclose($pipe);
+                    foreach ($item['pipe'] as $pipe) {
+                        fclose($pipe);
+                    }
+
+                    //Close process
                     proc_close($item['proc']);
-                    //Unset resource
-                    unset($resource[$key]);
+
+                    unset($resource[$key], $pipe);
                     continue;
                 }
 
@@ -188,15 +279,14 @@ class mpc
             }
         }
 
-        //Process data
+        //Parse data content
         foreach ($result as $key => $item) {
-            if ('' === $item['data']) continue;
-
-            $json = json_decode($item['data'], true);
-            $result[$key]['data'] = !is_null($json) ? $json : $item['data'];
+            if ('' !== $item['data'] && !is_null($json = json_decode($item['data'], true))) {
+                $result[$key]['data'] = $json;
+            }
         }
 
-        unset($resource, $key, $item, $pipe, $json);
+        unset($resource, $key, $item, $json);
         return $result;
     }
 }

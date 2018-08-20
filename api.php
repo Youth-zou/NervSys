@@ -1,10 +1,9 @@
 <?php
 
 /**
- * API Script
+ * API Entry
  *
- * Copyright 2016-2018 Jerry Shaw <jerry-shaw@live.com>
- * Copyright 2017-2018 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,22 +18,37 @@
  * limitations under the License.
  */
 
+//Declare strict types
 declare(strict_types = 1);
 
-//Check Version
-if (version_compare(PHP_VERSION, '7.1.0', '<')) exit('NervSys needs PHP 7.1.0 or higher!');
+//Check PHP version
+if (version_compare(PHP_VERSION, '7.2.0', '<')) {
+    exit('NervSys needs PHP 7.2.0 or higher!');
+}
 
-//Load Basic Config
-require __DIR__ . '/core/conf.php';
+//Set error_reporting level
+error_reporting(E_ALL | E_STRICT);
 
-//Load Router Config
-\core\ctr\router::load_conf();
+//Set runtime values
+set_time_limit(0);
+ignore_user_abort(true);
+date_default_timezone_set('PRC');
 
-//Load Router CORS
-\core\ctr\router::load_cors();
+//Define NervSys version
+define('VER', '7.0.0');
 
-//Run Process
-'cli' !== PHP_SAPI ? \core\ctr\router\cgi::run() : \core\ctr\router\cli::run();
+//Define absolute root path
+define('ROOT', strtr(__DIR__, ['/' => DIRECTORY_SEPARATOR, '\\' => DIRECTORY_SEPARATOR]) . DIRECTORY_SEPARATOR);
 
-//Output Result
-\core\ctr\router::output();
+//Register autoload function
+spl_autoload_register(
+    static function (string $class): void
+    {
+        //Load from namespace path or include path
+        require (false !== strpos($class, '\\') ? ROOT . strtr($class, '\\', DIRECTORY_SEPARATOR) : $class) . '.php';
+        unset($class);
+    }
+);
+
+//Start system
+\core\system::start();

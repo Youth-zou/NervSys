@@ -22,54 +22,43 @@ namespace ext;
 
 class redis_lock extends redis
 {
-    //Lock life
-    public static $life = 3;
+    //Lock sets
+    private $locks = [];
 
-    //Lock prefix
-    public static $prefix = 'lock:';
-
-    //Lock list
-    private static $lock = [];
+    //Lock key prefix
+    const PREFIX = 'LOCK:';
 
     //Retry properties
-    const wait  = 1000;
-    const retry = 10;
+    const WAIT  = 1000;
+    const RETRY = 10;
 
     /**
      * Lock on
      *
      * @param string $key
+     * @param int    $life
      *
      * @return bool
-     * @throws \Exception
+     * @throws \RedisException
      */
-    public static function on(string $key): bool
+    public function on(string $key, int $life = 3): bool
     {
-        //Lock key
-        $lock_key = self::$prefix . $key;
-
-        //Set lock
-        if (self::lock($lock_key)) {
-            register_shutdown_function([__CLASS__, 'clear']);
-            unset($key, $lock_key);
-            return true;
-        }
-
         $retry = 0;
+        $key   = self::PREFIX . $key;
 
-        while ($retry <= self::retry) {
-            ++$retry;
-            usleep(self::wait);
+        while ($retry <= self::RETRY) {
+            if ($this->lock($key, $life)) {
+                register_shutdown_function([$this, 'clear']);
 
-            //Reset lock
-            if (self::lock($lock_key)) {
-                register_shutdown_function([__CLASS__, 'clear']);
-                unset($key, $lock_key, $retry);
+                unset($key, $life, $retry);
                 return true;
             }
+
+            usleep(self::WAIT);
+            ++$retry;
         }
 
-        unset($key, $lock_key, $retry);
+        unset($key, $life, $retry);
         return false;
     }
 
@@ -78,53 +67,54 @@ class redis_lock extends redis
      *
      * @param string $key
      *
-     * @throws \Exception
+     * @throws \RedisException
      */
-    public static function off(string $key): void
+    public function off(string $key): void
     {
-        //Lock key
-        $lock_key = self::$prefix . $key;
+        $key = self::PREFIX . $key;
+        parent::connect()->del($key);
 
-        //Delete lock
-        self::connect()->del($lock_key);
+        if (false !== $key = array_search($key, $this->locks, true)) {
+            unset($this->locks[$key]);
+        }
 
-        //Delete key
-        $key = array_search($lock_key, self::$lock, true);
-        if (false !== $key) unset(self::$lock[$key]);
+        unset($key);
+    }
 
-        unset($key, $lock_key);
+    /**
+     * Clear all locks
+     *
+     * @throws \RedisException
+     */
+    public function clear(): void
+    {
+        if (!empty($this->locks)) {
+            call_user_func_array([parent::connect(), 'del'], $this->locks);
+            $this->locks = [];
+        }
     }
 
     /**
      * Set lock
      *
      * @param string $key
+     * @param int    $life
      *
      * @return bool
-     * @throws \Exception
+     * @throws \RedisException
      */
-    private static function lock(string $key): bool
+    private function lock(string $key, int $life): bool
     {
-        if (!self::connect()->setnx($key, time())) return false;
+        $redis = parent::connect();
 
-        self::connect()->expire($key, self::$life);
-        self::$lock[] = &$key;
+        if (!$redis->setnx($key, time())) {
+            return false;
+        }
 
-        unset($key);
+        $redis->expire($key, 0 < $life ? $life : 3);
+        $this->locks[] = &$key;
+
+        unset($key, $life, $redis);
         return true;
-    }
-
-    /**
-     * Clear all locks
-     */
-    private static function clear(): void
-    {
-        if (empty(self::$lock)) return;
-
-        //Delete locks
-        call_user_func_array([self::connect(), 'del'], self::$lock);
-
-        //Clear keys
-        self::$lock = [];
     }
 }

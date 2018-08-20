@@ -3,8 +3,7 @@
 /**
  * Redis Connector Extension
  *
- * Copyright 2017 Jerry Shaw <jerry-shaw@live.com>
- * Copyright 2018 秋水之冰 <27206617@qq.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,88 +20,173 @@
 
 namespace ext;
 
-class redis
+use core\handler\factory;
+
+class redis extends factory
 {
+    //Redis arguments
+    private $host       = '127.0.0.1';
+    private $port       = 6379;
+    private $auth       = '';
+    private $db         = 0;
+    private $prefix     = '';
+    private $timeout    = 10;
+    private $persist    = true;
+    private $persist_id = null;
+
     /**
-     * Redis settings
+     * Set host
+     *
+     * @param string $host
+     *
+     * @return object
      */
-    public static $host       = '127.0.0.1';
-    public static $port       = 6379;
-    public static $auth       = '';
-    public static $db         = 0;
-    public static $prefix     = '';
-    public static $timeout    = 10;
-    public static $persist    = true;
-    public static $persist_id = null;
+    public function host(string $host): object
+    {
+        $this->host = &$host;
 
-    //Current connection instance
-    private static $connect = null;
-
-    //Connection pool
-    private static $pool = [];
+        unset($host);
+        return $this;
+    }
 
     /**
-     * Create new connection
+     * Set port
+     *
+     * @param int $port
+     *
+     * @return object
+     */
+    public function port(int $port): object
+    {
+        $this->port = &$port;
+
+        unset($port);
+        return $this;
+    }
+
+    /**
+     * Set auth
+     *
+     * @param string $auth
+     *
+     * @return object
+     */
+    public function auth(string $auth): object
+    {
+        $this->auth = &$auth;
+
+        unset($auth);
+        return $this;
+    }
+
+    /**
+     * Set db name
+     *
+     * @param int $db
+     *
+     * @return object
+     */
+    public function db(int $db): object
+    {
+        $this->db = &$db;
+
+        unset($db);
+        return $this;
+    }
+
+    /**
+     * Set prefix
+     *
+     * @param string $prefix
+     *
+     * @return object
+     */
+    public function prefix(string $prefix): object
+    {
+        $this->prefix = &$prefix;
+
+        unset($prefix);
+        return $this;
+    }
+
+    /**
+     * Set read timeout
+     *
+     * @param int $timeout
+     *
+     * @return object
+     */
+    public function timeout(int $timeout): object
+    {
+        $this->timeout = &$timeout;
+
+        unset($timeout);
+        return $this;
+    }
+
+    /**
+     * Set persist type
+     *
+     * @param bool $persist
+     *
+     * @return object
+     */
+    public function persist(bool $persist): object
+    {
+        $this->persist = &$persist;
+
+        unset($persist);
+        return $this;
+    }
+
+    /**
+     * Set persist_id
+     *
+     * @param string $persist_id
+     *
+     * @return object
+     */
+    public function persist_id(string $persist_id): object
+    {
+        $this->persist_id = &$persist_id;
+
+        unset($persist_id);
+        return $this;
+    }
+
+    /**
+     * Redis connector
      *
      * @return \Redis
-     * @throws \Exception
+     * @throws \RedisException
      */
-    private static function create(): \Redis
+    public function connect(): \Redis
     {
-        $redis = new \Redis();
-        self::$persist ? $redis->pconnect(self::$host, self::$port, self::$timeout, self::$persist_id) : $redis->connect(self::$host, self::$port, self::$timeout);
+        //Factory use Redis instance
+        $redis = parent::use('Redis');
 
-        if ('' !== self::$auth && !$redis->auth(self::$auth)) throw new \Exception('Redis: Authentication Failed!');
-        if (!$redis->select(self::$db)) throw new \Exception('Redis: DB [' . self::$db . '] NOT exist!');
+        //Connect
+        $this->persist
+            ? $redis->pconnect($this->host, $this->port, $this->timeout, $this->persist_id)
+            : $redis->connect($this->host, $this->port, $this->timeout);
+
+        //Set auth
+        if ('' !== $this->auth && !$redis->auth($this->auth)) {
+            throw new \RedisException('Authentication Failed!', E_USER_ERROR);
+        }
+
+        //Set DB
+        if (!$redis->select($this->db)) {
+            throw new \RedisException('DB [' . $this->db . '] NOT found!', E_USER_ERROR);
+        }
+
+        //Set prefix
+        if ('' !== $this->prefix) {
+            $redis->setOption(\Redis::OPT_PREFIX, $this->prefix . ':');
+        }
 
         $redis->setOption(\Redis::OPT_SERIALIZER, \Redis::SERIALIZER_NONE);
-        if ('' !== self::$prefix) $redis->setOption(\Redis::OPT_PREFIX, self::$prefix . ':');
 
         return $redis;
-    }
-
-    /**
-     * Create Redis instance
-     *
-     * @param string $name
-     *
-     * @return \Redis
-     * @throws \Exception
-     */
-    public static function connect(string $name = ''): \Redis
-    {
-        self::$connect = '' === $name
-            ? (self::$connect ?? self::create())
-            : (self::$pool[$name] ?? self::$pool[$name] = self::create());
-
-        unset($name);
-        return self::$connect;
-    }
-
-    /**
-     * Close Redis instance
-     *
-     * @param string $name
-     */
-    public static function close(string $name = ''): void
-    {
-        if ('' === $name) {
-            $key = array_search(self::$connect, self::$pool, true);
-
-            if (false !== $key) {
-                self::$pool[$key] = null;
-                unset(self::$pool[$key]);
-            }
-
-            self::$connect->close();
-            self::$connect = null;
-        } else {
-            if (!isset(self::$pool[$name])) return;
-            if (self::$connect === self::$pool[$name]) self::$connect = null;
-
-            self::$pool[$name]->close();
-            self::$pool[$name] = null;
-            unset(self::$pool[$name]);
-        }
     }
 }

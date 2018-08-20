@@ -3,7 +3,7 @@
 /**
  * Crypt Extension
  *
- * Copyright 2017-2018 Jerry Shaw <jerry-shaw@live.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,16 +20,73 @@
 
 namespace ext;
 
-class crypt
+use core\handler\factory;
+
+class crypt extends factory
 {
-    //Keygen class
-    public static $keygen = '\ext\keygen';
+    //OpenSSL config path
+    private $conf = '/openssl.cnf';
 
     //Crypt method
-    public static $method = 'AES-256-CTR';
+    private $method = 'AES-256-CTR';
 
-    //OpenSSL config file path
-    public static $ssl_cnf = 'D:/Programs/WebServer/Programs/PHP/extras/ssl/openssl.cnf';
+    //Keygen class
+    private $keygen = '\\ext\\keygen';
+
+    /**
+     * Set conf path
+     *
+     * @param string $path
+     *
+     * @return object
+     */
+    public function conf(string $path): object
+    {
+        $this->conf = &$path;
+
+        unset($path);
+        return $this;
+    }
+
+    /**
+     * Set crypt method
+     *
+     * @param string $method
+     *
+     * @return object
+     */
+    public function method(string $method): object
+    {
+        $this->method = &$method;
+
+        unset($method);
+        return $this;
+    }
+
+    /**
+     * Set keygen class
+     *
+     * @param string $class
+     *
+     * @return object
+     */
+    public function keygen(string $class): object
+    {
+        $this->keygen = parent::build_name($class);
+
+        unset($class);
+        return $this;
+    }
+
+    /**
+     * Get crypt key
+     *
+     * @return string
+     */
+    public function get_key(): string
+    {
+        return $this->keygen::create();
+    }
 
     /**
      * Get AES Crypt keys
@@ -38,13 +95,13 @@ class crypt
      *
      * @return array
      */
-    private static function aes_keys(string $key): array
+    private function aes_keys(string $key): array
     {
         //Get iv length
-        $iv_len = openssl_cipher_iv_length(self::$method);
+        $iv_len = openssl_cipher_iv_length($this->method);
 
         //Parse keys from key string
-        $keys = forward_static_call([self::$keygen, 'extract'], $key);
+        $keys = $this->keygen::extract($key);
 
         //Correct iv when length not match
         switch ($iv_len <=> strlen($keys['iv'])) {
@@ -61,22 +118,58 @@ class crypt
     }
 
     /**
+     * Get RSA Key type
+     *
+     * @param string $key
+     *
+     * @return string
+     * @throws \Exception
+     */
+    private function rsa_type(string $key): string
+    {
+        $start = strlen('-----BEGIN ');
+        $end   = strpos($key, ' KEY-----', $start);
+
+        if (false === $end) {
+            throw new \Exception('RSA Key ERROR!', E_USER_WARNING);
+        }
+
+        $type = strtolower(substr($key, $start, $end - $start));
+
+        if (!in_array($type, ['public', 'private'], true)) {
+            throw new \Exception('RSA Key NOT support!', E_USER_WARNING);
+        }
+
+        unset($key, $start, $end);
+        return $type;
+    }
+
+    /**
      * Get RSA Key-Pairs (Public Key & Private Key)
      *
      * @return array
+     * @throws \Exception
      */
-    public static function rsa_keys(): array
+    public function rsa_keys(): array
     {
-        $keys = ['public' => '', 'private' => ''];
-        $config = ['config' => self::$ssl_cnf];
+        $keys   = ['public' => '', 'private' => ''];
+        $config = ['config' => $this->conf];
 
         $openssl = openssl_pkey_new($config);
-        if (false === $openssl) return $keys;
+
+        if (false === $openssl) {
+            throw new \Exception('OpenSSL config ERROR!', E_USER_ERROR);
+        }
 
         $public = openssl_pkey_get_details($openssl);
 
-        if (false !== $public) $keys['public'] = &$public['key'];
-        if (openssl_pkey_export($openssl, $private, null, $config)) $keys['private'] = &$private;
+        if (false !== $public) {
+            $keys['public'] = &$public['key'];
+        }
+
+        if (openssl_pkey_export($openssl, $private, null, $config)) {
+            $keys['private'] = &$private;
+        }
 
         openssl_pkey_free($openssl);
 
@@ -92,11 +185,11 @@ class crypt
      *
      * @return string
      */
-    public static function encrypt(string $string, string $key): string
+    public function encrypt(string $string, string $key): string
     {
-        $keys = self::aes_keys($key);
+        $keys = $this->aes_keys($key);
 
-        $string = (string)openssl_encrypt($string, self::$method, $keys['key'], OPENSSL_ZERO_PADDING, $keys['iv']);
+        $string = (string)openssl_encrypt($string, $this->method, $keys['key'], OPENSSL_ZERO_PADDING, $keys['iv']);
 
         unset($key, $keys);
         return $string;
@@ -110,44 +203,14 @@ class crypt
      *
      * @return string
      */
-    public static function decrypt(string $string, string $key): string
+    public function decrypt(string $string, string $key): string
     {
-        $keys = self::aes_keys($key);
+        $keys = $this->aes_keys($key);
 
-        $string = (string)openssl_decrypt($string, self::$method, $keys['key'], OPENSSL_ZERO_PADDING, $keys['iv']);
+        $string = (string)openssl_decrypt($string, $this->method, $keys['key'], OPENSSL_ZERO_PADDING, $keys['iv']);
 
         unset($key, $keys);
         return $string;
-    }
-
-    /**
-     * Get RSA Key type
-     *
-     * @param string $key
-     *
-     * @return string
-     */
-    private static function rsa_type(string $key): string
-    {
-        $start = strlen('-----BEGIN ');
-        $end = strpos($key, ' KEY-----', $start);
-
-        if (false === $end) {
-            debug(__CLASS__, 'RSA Key ERROR!');
-            unset($key, $start, $end);
-            return '';
-        }
-
-        $type = strtolower(substr($key, $start, $end - $start));
-
-        if (!in_array($type, ['public', 'private'], true)) {
-            debug(__CLASS__, 'RSA Key NOT support!');
-            unset($key, $start, $end, $type);
-            return '';
-        }
-
-        unset($key, $start, $end);
-        return $type;
     }
 
     /**
@@ -157,18 +220,21 @@ class crypt
      * @param string $key
      *
      * @return string
+     * @throws \Exception
      */
-    public static function rsa_encrypt(string $string, string $key): string
+    public function rsa_encrypt(string $string, string $key): string
     {
-        $type = self::rsa_type($key);
-        if ('' === $type) return '';
+        $encrypt = 'public' === $this->rsa_type($key)
+            ? openssl_public_encrypt($string, $string, $key)
+            : openssl_private_encrypt($string, $string, $key);
 
-        $encrypt = 'public' === $type ? openssl_public_encrypt($string, $string, $key) : openssl_private_encrypt($string, $string, $key);
-        if (!$encrypt) return '';
+        if (!$encrypt) {
+            return '';
+        }
 
         $string = (string)base64_encode($string);
 
-        unset($key, $type, $encrypt);
+        unset($key, $encrypt);
         return $string;
     }
 
@@ -179,18 +245,21 @@ class crypt
      * @param string $key
      *
      * @return string
+     * @throws \Exception
      */
-    public static function rsa_decrypt(string $string, string $key): string
+    public function rsa_decrypt(string $string, string $key): string
     {
-        $type = self::rsa_type($key);
-        if ('' === $type) return '';
-
         $string = (string)base64_decode($string, true);
 
-        $decrypt = 'private' === $type ? openssl_private_decrypt($string, $string, $key) : openssl_public_decrypt($string, $string, $key);
-        if (!$decrypt) return '';
+        $decrypt = 'private' === $this->rsa_type($key)
+            ? openssl_private_decrypt($string, $string, $key)
+            : openssl_public_decrypt($string, $string, $key);
 
-        unset($key, $type, $decrypt);
+        if (!$decrypt) {
+            return '';
+        }
+
+        unset($key, $decrypt);
         return $string;
     }
 
@@ -202,13 +271,18 @@ class crypt
      *
      * @return string
      */
-    public static function hash_pwd(string $string, string $key): string
+    public function hash_pwd(string $string, string $key): string
     {
-        if (32 > strlen($key)) $key = str_pad($key, 32, $key);
+        if (32 > strlen($key)) {
+            $key = str_pad($key, 32, $key);
+        }
 
         $noises = str_split($key, 8);
 
-        $string = 0 === ord(substr($key, 0, 1)) & 1 ? $noises[0] . ':' . $string . ':' . $noises[2] : $noises[1] . ':' . $string . ':' . $noises[3];
+        $string = 0 === ord(substr($key, 0, 1)) & 1
+            ? $noises[0] . ':' . $string . ':' . $noises[2]
+            : $noises[1] . ':' . $string . ':' . $noises[3];
+
         $string = substr(hash('sha1', $string), 4, 32);
 
         unset($key, $noises);
@@ -224,9 +298,12 @@ class crypt
      *
      * @return bool
      */
-    public static function check_pwd(string $input, string $key, string $hash): bool
+    public function check_pwd(string $input, string $key, string $hash): bool
     {
-        return self::hash_pwd($input, $key) === $hash;
+        $result = $this->hash_pwd($input, $key) === $hash;
+
+        unset($input, $key, $hash);
+        return $result;
     }
 
     /**
@@ -236,16 +313,17 @@ class crypt
      * @param string $rsa_key
      *
      * @return string
+     * @throws \Exception
      */
-    public static function sign(string $string, string $rsa_key = ''): string
+    public function sign(string $string, string $rsa_key = ''): string
     {
         //Prepare key
-        $key = forward_static_call([self::$keygen, 'create']);
-        $mix = forward_static_call([self::$keygen, 'obscure'], $key);
+        $key = $this->keygen::create();
+        $mix = $this->keygen::obscure($key);
 
         //Encrypt signature
-        $mix = '' === $rsa_key ? (string)base64_encode($mix) : self::rsa_encrypt($mix, $rsa_key);
-        $sig = '' !== $mix ? $mix . '-' . self::encrypt($string, $key) : '';
+        $mix = '' === $rsa_key ? (string)base64_encode($mix) : $this->rsa_encrypt($mix, $rsa_key);
+        $sig = '' !== $mix ? $mix . '-' . $this->encrypt($string, $key) : '';
 
         unset($string, $rsa_key, $key, $mix);
         return $sig;
@@ -258,19 +336,23 @@ class crypt
      * @param string $rsa_key
      *
      * @return string
+     * @throws \Exception
      */
-    public static function verify(string $string, string $rsa_key = ''): string
+    public function verify(string $string, string $rsa_key = ''): string
     {
-        //Prepare signature
-        if (false === strpos($string, '-')) return '';
+        //Check signature
+        if (false === strpos($string, '-')) {
+            return '';
+        }
+
         list($mix, $enc) = explode('-', $string, 2);
 
         //Rebuild crypt keys
-        $mix = '' === $rsa_key ? (string)base64_decode($mix, true) : self::rsa_decrypt($mix, $rsa_key);
-        $key = forward_static_call([self::$keygen, 'rebuild'], $mix);
+        $mix = '' === $rsa_key ? (string)base64_decode($mix, true) : $this->rsa_decrypt($mix, $rsa_key);
+        $key = $this->keygen::rebuild($mix);
 
         //Decrypt signature
-        $sig = self::decrypt($enc, $key);
+        $sig = $this->decrypt($enc, $key);
 
         unset($string, $rsa_key, $mix, $enc, $key);
         return $sig;

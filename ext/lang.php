@@ -3,7 +3,7 @@
 /**
  * Language Extension
  *
- * Copyright 2017 Jerry Shaw <jerry-shaw@live.com>
+ * Copyright 2016-2018 秋水之冰 <27206617@qq.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,48 +20,59 @@
 
 namespace ext;
 
-class lang
+use core\handler\factory;
+
+class lang extends factory
 {
     /**
      * Language file directory
-     * Related to "ROOT/module/"
-     * Language file should be located in "ROOT/module/$dir/$lang/LC_MESSAGES/filename.mo"
      *
-     * @var string
+     * Related to "ROOT/$dir/"
+     * Language file should be located in "ROOT/$dir/self::DIR/$lang/LC_MESSAGES/filename.mo"
      */
-    public static $dir = 'language';
-
-    //Language
-    public static $lang = 'en-US';
+    const DIR = 'language';
 
     /**
-     * Load language pack from module
+     * Load language file
      *
-     * @param string $module
+     * @param string $dir
      * @param string $file
+     * @param string $lang
      */
-    public static function load(string $module, string $file): void
+    public static function load(string $dir, string $file, string $lang = ''): void
     {
-        putenv('LANG=' . self::$lang);
-        setlocale(LC_ALL, self::$lang);
-        bindtextdomain($file, ROOT . '/' . $module . '/' . self::$dir . '/');
+        if ('' === $lang) {
+            $lang = self::detect();
+        }
+
+        putenv('LANG=' . $lang);
+        setlocale(LC_ALL, $lang);
+
+        bindtextdomain($file, ROOT . $dir . DIRECTORY_SEPARATOR . self::DIR . DIRECTORY_SEPARATOR);
         textdomain($file);
 
-        unset($module, $file);
+        unset($dir, $file, $lang);
     }
 
     /**
-     * Translate list in language
+     * Detect language
      *
-     * @param array $list
+     * @return string
      */
-    public static function trans(array &$list): void
+    private static function detect(): string
     {
-        foreach ($list as $key => $item) {
-            unset($list[$key]);
-            $list[$item] = gettext($item);
+        static $lang = '';
+
+        if ('' === $lang) {
+            if (isset(parent::$data['lang'])) {
+                $lang = parent::$data['lang'];
+            } elseif (isset($_SERVER['HTTP_ACCEPT_LANGUAGE'])) {
+                $lang = 'zh' === substr($_SERVER['HTTP_ACCEPT_LANGUAGE'], 0, 2) ? 'zh-CN' : 'en-US';
+            } else {
+                $lang = 'en-US';
+            }
         }
 
-        unset($key, $item);
+        return $lang;
     }
 }

@@ -20,80 +20,71 @@
 
 namespace ext;
 
-use core\ctr\router;
-
 class redis_cache extends redis
 {
-    //Cache life (in seconds)
-    public static $life = 600;
-
-    //Cache name
-    public static $name = null;
-
-    //Cache prefix
-    public static $prefix = 'cache:';
-
-    //Bind session
-    public static $bind_session = false;
+    //Cache key prefix
+    const PREFIX = 'CAS:';
 
     /**
      * Set cache
      *
-     * @param array $data
+     * @param string $key
+     * @param array  $data
+     * @param int    $life
      *
      * @return bool
-     * @throws \Exception
+     * @throws \RedisException
      */
-    public static function set(array $data): bool
+    public function set(string $key, array $data, int $life = 600): bool
     {
-        $name = self::get_name();
+        $key   = self::PREFIX . $key;
         $cache = json_encode($data);
 
-        $result = 0 < self::$life ? self::connect()->set($name, $cache, self::$life) : self::connect()->set($name, $cache);
+        $result = 0 < $life ? parent::connect()->set($key, $cache, $life) : parent::connect()->set($key, $cache);
 
-        unset($data, $name, $cache);
+        unset($key, $data, $life, $cache);
         return $result;
     }
 
     /**
      * Get cache
      *
+     * @param string $key
+     *
      * @return array
-     * @throws \Exception
+     * @throws \RedisException
      */
-    public static function get(): array
+    public function get(string $key): array
     {
-        $cache = self::connect()->get(self::get_name());
-        if (false === $cache) return [];
+        $cache = parent::connect()->get(self::PREFIX . $key);
+
+        if (false === $cache) {
+            return [];
+        }
 
         $data = json_decode($cache, true);
-        if (!is_array($data)) return [];
 
-        unset($cache);
+        if (!is_array($data)) {
+            return [];
+        }
+
+        unset($key, $cache);
         return $data;
     }
 
     /**
      * Delete cache
      *
-     * @throws \Exception
-     */
-    public static function del(): void
-    {
-        self::connect()->del(self::get_name());
-    }
-
-    /**
-     * Get cache name
+     * @param string $key
      *
-     * @return string
+     * @return int
+     * @throws \RedisException
      */
-    private static function get_name(): string
+    public function del(string $key): int
     {
-        $keys = self::$name ?? [router::$cmd, router::$data, self::$bind_session ? $_SESSION : []];
-        $name = self::$prefix . hash('md5', json_encode($keys));
+        $result = parent::connect()->del(self::PREFIX . $key);
 
-        unset($keys);
-        return $name;
+        unset($key);
+        return $result;
     }
 }
